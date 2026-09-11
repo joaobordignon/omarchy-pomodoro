@@ -3,7 +3,7 @@
   "id": "joaobordignon.pomodoro",
   "name": "Pomodoro",
   "version": "1.2.0",
-  "author": "john",
+  "author": "John Bordignon",
   "license": "MIT",
   "description": "Pomodoro timer for the Omarchy status bar that cycles between work and break, with a duration progress bar and +/- controls.",
   "kinds": [
