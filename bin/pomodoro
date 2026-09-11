@@ -1,0 +1,147 @@
+#!/bin/bash
+# Terminal control for the joaobordignon.pomodoro Omarchy bar widget.
+#
+# All writes go through the running shell over IPC rather than touching
+# ~/.config/omarchy/shell.json directly: the shell rewrites that whole file from
+# its in-memory copy, so an edit made behind its back is lost on its next write.
+
+set -euo pipefail
+
+TARGET="joaobordignon.pomodoro"
+
+# key|work|break|label
+PRESETS=(
+  "classic|25|5|Classic"
+  "short|15|3|Short bursts"
+  "long|50|10|Long focus"
+  "deep|45|15|Deep work"
+  "desktime|52|17|DeskTime"
+  "ultradian|90|20|Ultradian"
+)
+
+die() { echo "$1" >&2; exit 1; }
+
+ipc() {
+  local out
+  if ! out=$(omarchy-shell "$TARGET" "$@" 2>&1); then
+    case "$out" in
+      *"Function not found"*)
+        die "The pomodoro widget did not answer that call. If you just edited its QML, run: omarchy restart shell" ;;
+      *)
+        die "Could not reach the pomodoro widget: $out" ;;
+    esac
+  fi
+  printf '%s' "$out"
+}
+
+status_json() { ipc status; }
+
+status_field() {
+  python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"
+}
+
+fmt_status() {
+  status_json | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+r = s["remainingSeconds"]
+phase = "Break" if s["phase"] == "break" else "Work"
+state = "running" if s["running"] else "paused"
+cycle = "{}/{}".format(s["workMinutes"], s["breakMinutes"])
+name = s.get("cycleName") or ""
+if name:
+    cycle = name + " " + cycle
+print("{:<6} {:02d}:{:02d}  ({})".format(phase, r // 60, r % 60, state))
+print("{:<6} {}".format("Cycle", cycle))
+print("{:<6} {}".format("Auto", "on" if s["autoCycle"] else "off"))
+'
+}
+
+preset_row() {
+  local key=$1 row
+  for row in "${PRESETS[@]}"; do
+    [[ ${row%%|*} == "$key" ]] && { printf '%s' "$row"; return 0; }
+  done
+  return 1
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: pomodoro [command]
+
+  status                 Current phase, time left, and cycle (default)
+  list                   Available cycle presets
+  use <preset>           Apply a preset by name
+  set <work> <break>     Apply a custom cycle, in minutes (1-180)
+  auto <on|off>          Auto-advance between work and break
+  start | pause | toggle | reset | mode
+
+Examples:
+  pomodoro use long
+  pomodoro set 35 7
+  pomodoro auto off
+USAGE
+}
+
+cmd=${1:-status}
+case "$cmd" in
+  status)
+    fmt_status
+    ;;
+
+  list)
+    snapshot=$(status_json)
+    aw=$(printf '%s' "$snapshot" | status_field workMinutes)
+    ab=$(printf '%s' "$snapshot" | status_field breakMinutes)
+    matched=0
+    for row in "${PRESETS[@]}"; do
+      IFS='|' read -r key w b label <<<"$row"
+      if [[ $w == "$aw" && $b == "$ab" ]]; then
+        mark=" *"; matched=1
+      else
+        mark="  "
+      fi
+      printf '%s %-10s %3s/%-3s  %s\n' "$mark" "$key" "$w" "$b" "$label"
+    done
+    (( matched )) || printf ' %s %-10s %3s/%-3s  %s\n' "*" "custom" "$aw" "$ab" "Current setting"
+    ;;
+
+  use)
+    [[ $# -ge 2 ]] || die "Usage: pomodoro use <preset>   (see: pomodoro list)"
+    row=$(preset_row "$2") || die "Unknown preset '$2'. Try: pomodoro list"
+    IFS='|' read -r _ w b label <<<"$row"
+    applied=$(ipc cycle "$w" "$b" "$label")
+    echo "Cycle set to $label $applied"
+    ;;
+
+  set)
+    [[ $# -ge 3 ]] || die "Usage: pomodoro set <work> <break>   (minutes)"
+    [[ $2 =~ ^[0-9]+$ && $3 =~ ^[0-9]+$ ]] || die "Work and break must be whole numbers of minutes."
+    # Rejected rather than silently clamped: a 0 handed to the widget falls back
+    # to the current value, which reads as the command having been ignored.
+    for v in "$2" "$3"; do
+      (( v >= 1 && v <= 180 )) || die "Minutes must be between 1 and 180 (got $v)."
+    done
+    applied=$(ipc cycle "$2" "$3" "")
+    echo "Cycle set to $applied"
+    [[ $applied == "$2/$3" ]] || echo "(clamped to the supported 1-180 minute range)"
+    ;;
+
+  auto)
+    [[ $# -ge 2 ]] || die "Usage: pomodoro auto <on|off>"
+    case "$2" in
+      on|true|yes|1)  state=$(ipc auto true) ;;
+      off|false|no|0) state=$(ipc auto false) ;;
+      *) die "Usage: pomodoro auto <on|off>" ;;
+    esac
+    echo "Auto-cycle $state"
+    ;;
+
+  start|pause|toggle|reset|mode)
+    ipc "$cmd" >/dev/null
+    fmt_status
+    ;;
+
+  -h|--help|help) usage ;;
+  *) usage; exit 1 ;;
+esac

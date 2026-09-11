@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "joaobordignon.pomodoro",
+  "name": "Pomodoro",
+  "version": "1.2.0",
+  "author": "john",
+  "license": "MIT",
+  "description": "Pomodoro timer for the Omarchy status bar that cycles between work and break, with a duration progress bar and +/- controls.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Pomodoro",
+    "description": "Pomodoro timer with duration bar and controls",
+    "category": "Utilities",
+    "allowMultiple": false,
+    "defaults": {
+      "workMinutes": 25,
+      "breakMinutes": 5,
+      "autoCycle": true
+    },
+    "schema": [
+      {
+        "key": "workMinutes",
+        "type": "number",
+        "label": "Work minutes",
+        "description": "Length of a work session, 1-90 minutes.",
+        "default": 25
+      },
+      {
+        "key": "breakMinutes",
+        "type": "number",
+        "label": "Break minutes",
+        "description": "Length of a break, 1-90 minutes.",
+        "default": 5
+      },
+      {
+        "key": "autoCycle",
+        "type": "boolean",
+        "label": "Auto-cycle work and break",
+        "description": "When a session ends, switch to the other phase and start it automatically.",
+        "defaultValue": true
+      }
+    ]
+  }
+}
